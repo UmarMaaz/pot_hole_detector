@@ -22,17 +22,25 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [selectionRect, setSelectionRect] = useState<{x: number, y: number, w: number, h: number} | null>(null);
 
+  const [cameraError, setCameraError] = useState<string | null>(null);
+
   useEffect(() => {
     async function startCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraError('Camera not supported. Please upload an image.');
+        return;
+      }
       try {
         const mediaStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: false
         });
         setStream(mediaStream);
+        setCameraError(null);
         if (videoRef.current) videoRef.current.srcObject = mediaStream;
       } catch (err) {
         console.error("Camera access denied:", err);
+        setCameraError('Camera access denied. Please upload an image.');
       }
     }
 
@@ -198,7 +206,20 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
       onTouchEnd={handleEnd}
     >
       {!uploadedImage ? (
-        <video ref={videoRef} autoPlay playsInline muted className="absolute w-full h-full object-cover grayscale-[0.1] brightness-[0.7]" />
+        <>
+          <video ref={videoRef} autoPlay playsInline muted className="absolute w-full h-full object-cover grayscale-[0.1] brightness-[0.7]" />
+          {cameraError && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/90 z-5">
+              <div className="text-center p-4">
+                <div className="text-orange-500 font-bold text-sm mb-2">{cameraError}</div>
+                <label className="px-4 py-2 bg-orange-500 text-black rounded-lg font-bold text-sm cursor-pointer">
+                  Upload Image
+                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                </label>
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <img
           src={uploadedImage}
@@ -253,7 +274,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
                 onClick={() => {
                   setUploadedImage(null);
                   setImageDimensions({ width: 0, height: 0 });
-                  if (!stream) {
+                  if (!stream && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
                     const startCamera = async () => {
                       try {
                         const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -261,9 +282,11 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
                           audio: false
                         });
                         setStream(mediaStream);
+                        setCameraError(null);
                         if (videoRef.current) videoRef.current.srcObject = mediaStream;
                       } catch (err) {
                         console.error("Camera access denied:", err);
+                        setCameraError('Camera access denied.');
                       }
                     };
                     startCamera();

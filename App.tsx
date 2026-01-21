@@ -15,6 +15,7 @@ const App: React.FC = () => {
   const [learnedSamples, setLearnedSamples] = useState<LearnedSample[]>([]);
   const [sensors] = useState<SensorState>({ front: 5, back: 5, left: 5, right: 5, frontLeft: 5, frontRight: 5 });
   const [isModelLoading, setIsModelLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState('Initializing...');
   const [isSyncing, setIsSyncing] = useState(false);
 
   const requestRef = useRef<number>(0);
@@ -56,11 +57,25 @@ const App: React.FC = () => {
     cropCanvasRef.current.width = 224;
     cropCanvasRef.current.height = 224;
 
-    initLocalModel().then(m => {
+    const loadModels = async () => {
+      try {
+        setLoadingProgress('Loading WASM runtime...');
+        await new Promise(r => setTimeout(r, 100));
+        
+        setLoadingProgress('Loading object detector...');
+        const m = await initLocalModel();
+        
+        setLoadingProgress('Models ready!');
         modelsRef.current = m;
         setIsModelLoading(false);
         animate();
-    });
+      } catch (err) {
+        console.error('Failed to load models:', err);
+        setLoadingProgress('Failed to load. Please refresh.');
+      }
+    };
+
+    loadModels();
     return () => cancelAnimationFrame(requestRef.current);
   }, []);
 
@@ -318,7 +333,9 @@ const App: React.FC = () => {
                 <div className="absolute inset-0 border-4 border-orange-500/20 rounded-full"></div>
                 <div className="absolute inset-0 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
              </div>
-             <div className="text-orange-500 font-black text-[10px] sm:text-xs tracking-[0.3em] sm:tracking-[0.5em] uppercase">Booting Neural Engine...</div>
+             <div className="text-orange-500 font-black text-[10px] sm:text-xs tracking-[0.3em] sm:tracking-[0.5em] uppercase mb-2">Booting Neural Engine</div>
+             <div className="text-slate-500 font-bold text-[8px] sm:text-[10px] tracking-wider uppercase">{loadingProgress}</div>
+             <div className="text-slate-600 font-medium text-[7px] sm:text-[8px] mt-4 max-w-[200px]">First load may take 10-30 seconds on mobile</div>
           </div>
         )}
 

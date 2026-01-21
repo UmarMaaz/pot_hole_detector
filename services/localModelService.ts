@@ -6,32 +6,56 @@ import { ObjectDetector, ImageEmbedder, FilesetResolver } from "@mediapipe/tasks
 let objectDetector: any = null;
 let imageEmbedder: any = null;
 
+const isMobile = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    (window.innerWidth <= 768);
+};
+
 export async function initLocalModel() {
   if (objectDetector && imageEmbedder) return { objectDetector, imageEmbedder };
+
+  const delegate = isMobile() ? "CPU" : "GPU";
+  console.log(`Initializing models with ${delegate} delegate...`);
 
   try {
     const filesetResolver = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
     );
 
-    // Detector: Lowered threshold significantly to capture subtle road features like potholes
-    objectDetector = await ObjectDetector.createFromOptions(filesetResolver, {
-      baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
-        delegate: "GPU"
-      },
-      scoreThreshold: 0.15, 
-      runningMode: "VIDEO"
-    });
+    const createDetector = async (useDelegate: string) => {
+      return ObjectDetector.createFromOptions(filesetResolver, {
+        baseOptions: {
+          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
+          delegate: useDelegate
+        },
+        scoreThreshold: 0.15, 
+        runningMode: "VIDEO"
+      });
+    };
 
-    // Embedder: MobileNet V3 for generating visual signatures
-    imageEmbedder = await ImageEmbedder.createFromOptions(filesetResolver, {
-      baseOptions: {
-        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite`,
-        delegate: "GPU"
-      },
-      runningMode: "IMAGE"
-    });
+    const createEmbedder = async (useDelegate: string) => {
+      return ImageEmbedder.createFromOptions(filesetResolver, {
+        baseOptions: {
+          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite`,
+          delegate: useDelegate
+        },
+        runningMode: "IMAGE"
+      });
+    };
+
+    try {
+      objectDetector = await createDetector(delegate);
+    } catch (e) {
+      console.warn("GPU detector failed, falling back to CPU:", e);
+      objectDetector = await createDetector("CPU");
+    }
+
+    try {
+      imageEmbedder = await createEmbedder(delegate);
+    } catch (e) {
+      console.warn("GPU embedder failed, falling back to CPU:", e);
+      imageEmbedder = await createEmbedder("CPU");
+    }
 
     return { objectDetector, imageEmbedder };
   } catch (error) {
