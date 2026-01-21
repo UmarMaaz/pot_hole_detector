@@ -1,0 +1,8 @@
+{
+  "name": "SafeDrive AI Dashboard",
+  "description": "An intelligent driver assistance system that uses AI to detect road hazards like potholes and potential collisions in real-time.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
