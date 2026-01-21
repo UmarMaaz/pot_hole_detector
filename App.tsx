@@ -3,17 +3,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { HazardType, Detection, SensorState, LearnedSample } from './types';
 import CameraFeed from './components/CameraFeed';
 import RadarDisplay from './components/RadarDisplay';
-import ImageUpload from './components/ImageUpload';
 import { initLocalModel, processDetections, computeCosineSimilarity } from './services/localModelService';
 import { potholeService, isSupabaseConfigured } from './services/supabaseClient';
 
 const STORAGE_KEY = 'neural_observer_local_memory';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'drive' | 'memory' | 'upload'>('drive');
+  const [activeTab, setActiveTab] = useState<'drive' | 'memory'>('drive');
   const [isLearningMode, setIsLearningMode] = useState(false);
   const [detections, setDetections] = useState<Detection[]>([]);
-  const [imageDetections, setImageDetections] = useState<Detection[]>([]);
   const [learnedSamples, setLearnedSamples] = useState<LearnedSample[]>([]);
   const [sensors] = useState<SensorState>({ front: 5, back: 5, left: 5, right: 5, frontLeft: 5, frontRight: 5 });
   const [isModelLoading, setIsModelLoading] = useState(true);
@@ -279,21 +277,6 @@ const App: React.FC = () => {
                 </div>
             </div>
           </div>
-        ) : activeTab === 'upload' ? (
-          <div className="flex-1 overflow-y-auto px-4 py-6 bg-slate-950">
-            <div className="max-w-4xl mx-auto">
-              <header className="mb-8">
-                <h2 className="text-2xl font-black uppercase italic tracking-tighter">Image <span className="text-orange-500">Analyzer</span></h2>
-                <p className="text-slate-500 font-bold text-[9px] tracking-[0.2em] uppercase mt-1">
-                  Upload images to detect potholes
-                </p>
-              </header>
-              <ImageUpload
-                onDetectionsChange={setImageDetections}
-                onTrainWithSamples={handleTrainWithUploadedImage}
-              />
-            </div>
-          </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-4 py-6 bg-slate-950">
             <div className="max-w-4xl mx-auto">
@@ -351,13 +334,6 @@ const App: React.FC = () => {
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
                 Archives
-            </button>
-            <button
-                onClick={() => { setActiveTab('upload'); setIsLearningMode(false); }}
-                className={`flex-1 py-3 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'upload' ? 'bg-orange-500 text-black shadow-lg shadow-orange-500/20' : 'text-slate-500'}`}
-            >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                Upload
             </button>
         </div>
       </footer>

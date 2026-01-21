@@ -18,13 +18,14 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
   const [isDragging, setIsDragging] = useState(false);
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
 
   useEffect(() => {
     async function startCamera() {
       try {
-        const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false 
+          audio: false
         });
         setStream(mediaStream);
         if (videoRef.current) videoRef.current.srcObject = mediaStream;
@@ -32,9 +33,30 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
         console.error("Camera access denied:", err);
       }
     }
-    if (isActive && !stream) startCamera();
+
+    if (isActive && !stream && !uploadedImage) {
+      startCamera();
+    }
     return () => stream?.getTracks().forEach(track => track.stop());
-  }, [isActive, stream]);
+  }, [isActive, stream, uploadedImage]);
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setUploadedImage(event.target.result as string);
+          // Stop the camera stream if it's active
+          if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            setStream(null);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   // Support both Mouse and Touch
   const getCoords = (e: React.MouseEvent | React.TouchEvent) => {
@@ -141,7 +163,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
   }, [detections, isDragging, startPos, currentPos]);
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className={`relative w-full h-full bg-black flex items-center justify-center overflow-hidden transition-all ${isLearningMode ? 'custom-cursor' : ''}`}
       onMouseDown={handleStart}
@@ -151,19 +173,70 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
       onTouchMove={handleMove}
       onTouchEnd={handleEnd}
     >
-      <video ref={videoRef} autoPlay playsInline muted className="absolute w-full h-full object-cover grayscale-[0.1] brightness-[0.7]" />
-      
+      {!uploadedImage ? (
+        <video ref={videoRef} autoPlay playsInline muted className="absolute w-full h-full object-cover grayscale-[0.1] brightness-[0.7]" />
+      ) : (
+        <img
+          src={uploadedImage}
+          alt="Uploaded for training"
+          className="absolute w-full h-full object-cover grayscale-[0.1] brightness-[0.7]"
+        />
+      )}
+
       {/* HUD Vignette for Contrast */}
       <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_20%,rgba(0,0,0,0.6)_100%)]"></div>
-      
+
       <canvas ref={canvasRef} width={1280} height={720} className="absolute w-full h-full object-cover pointer-events-none z-10" />
-      
+
       {isLearningMode && (
+        <>
           <div className="absolute inset-0 bg-orange-500/10 pointer-events-none border-[20px] border-orange-500/10 flex items-center justify-center z-20">
-              <div className="bg-orange-500/90 backdrop-blur-xl text-black px-8 py-3 font-black text-[10px] tracking-[0.2em] rounded-full shadow-2xl flex items-center gap-4 animate-bounce uppercase">
-                  Select Visual Signature
-              </div>
+            <div className="bg-orange-500/90 backdrop-blur-xl text-black px-8 py-3 font-black text-[10px] tracking-[0.2em] rounded-full shadow-2xl flex items-center gap-4 animate-bounce uppercase">
+              Select Visual Signature
+            </div>
           </div>
+
+          <div className="absolute top-4 left-4 z-30">
+            <label className="px-4 py-2 bg-orange-500 text-black rounded-lg font-bold text-sm cursor-pointer">
+              Upload Image
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
+              />
+            </label>
+          </div>
+
+          {uploadedImage && (
+            <div className="absolute top-4 right-4 z-30">
+              <button
+                onClick={() => {
+                  setUploadedImage(null);
+                  if (!stream) {
+                    // Restart camera if it was stopped
+                    const startCamera = async () => {
+                      try {
+                        const mediaStream = await navigator.mediaDevices.getUserMedia({
+                          video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+                          audio: false
+                        });
+                        setStream(mediaStream);
+                        if (videoRef.current) videoRef.current.srcObject = mediaStream;
+                      } catch (err) {
+                        console.error("Camera access denied:", err);
+                      }
+                    };
+                    startCamera();
+                  }
+                }}
+                className="px-4 py-2 bg-gray-700 text-white rounded-lg font-bold text-sm"
+              >
+                Use Camera
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
