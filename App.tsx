@@ -3,15 +3,17 @@ import React, { useState, useEffect, useRef } from 'react';
 import { HazardType, Detection, SensorState, LearnedSample } from './types';
 import CameraFeed from './components/CameraFeed';
 import RadarDisplay from './components/RadarDisplay';
+import ImageUpload from './components/ImageUpload';
 import { initLocalModel, processDetections, computeCosineSimilarity } from './services/localModelService';
 import { potholeService, isSupabaseConfigured } from './services/supabaseClient';
 
 const STORAGE_KEY = 'neural_observer_local_memory';
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'drive' | 'memory'>('drive');
+  const [activeTab, setActiveTab] = useState<'drive' | 'memory' | 'upload'>('drive');
   const [isLearningMode, setIsLearningMode] = useState(false);
   const [detections, setDetections] = useState<Detection[]>([]);
+  const [imageDetections, setImageDetections] = useState<Detection[]>([]);
   const [learnedSamples, setLearnedSamples] = useState<LearnedSample[]>([]);
   const [sensors] = useState<SensorState>({ front: 5, back: 5, left: 5, right: 5, frontLeft: 5, frontRight: 5 });
   const [isModelLoading, setIsModelLoading] = useState(true);
@@ -217,7 +219,7 @@ const App: React.FC = () => {
         {activeTab === 'drive' ? (
           <div className="flex-1 relative">
             <CameraFeed detections={detections} isActive={true} isLearningMode={isLearningMode} onAreaSelected={handleAreaSelected} />
-            
+
             {/* HUD Overlays - Positioned for Mobile Safe Zones */}
             <div className="absolute inset-x-0 bottom-4 px-4 flex flex-col gap-4 pointer-events-none transition-all duration-500 ease-out">
                 {detections.length > 0 && (
@@ -225,7 +227,7 @@ const App: React.FC = () => {
                         NEURAL HAZARD DETECTED
                     </div>
                 )}
-                
+
                 <div className="flex justify-between items-end">
                     <div className="scale-75 origin-bottom-left">
                         <RadarDisplay sensors={sensors} />
@@ -252,6 +254,18 @@ const App: React.FC = () => {
                 </div>
             </div>
           </div>
+        ) : activeTab === 'upload' ? (
+          <div className="flex-1 overflow-y-auto px-4 py-6 bg-slate-950">
+            <div className="max-w-4xl mx-auto">
+              <header className="mb-8">
+                <h2 className="text-2xl font-black uppercase italic tracking-tighter">Image <span className="text-orange-500">Analyzer</span></h2>
+                <p className="text-slate-500 font-bold text-[9px] tracking-[0.2em] uppercase mt-1">
+                  Upload images to detect potholes
+                </p>
+              </header>
+              <ImageUpload onDetectionsChange={setImageDetections} />
+            </div>
+          </div>
         ) : (
           <div className="flex-1 overflow-y-auto px-4 py-6 bg-slate-950">
             <div className="max-w-4xl mx-auto">
@@ -270,7 +284,7 @@ const App: React.FC = () => {
                             <div className="aspect-square relative">
                                 <img src={sample.thumbnail} className="w-full h-full object-cover opacity-80" />
                                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 to-transparent"></div>
-                                <button 
+                                <button
                                     onClick={(e) => { e.stopPropagation(); handleDeleteSample(sample.id); }}
                                     className="absolute top-2 right-2 w-6 h-6 bg-red-500/20 backdrop-blur-md rounded-full flex items-center justify-center text-red-500 border border-red-500/20"
                                 >
@@ -296,19 +310,26 @@ const App: React.FC = () => {
       {/* Fixed Bottom Navigation - Mobile Optimized */}
       <footer className="fixed bottom-0 inset-x-0 z-50 bg-slate-950/80 backdrop-blur-3xl border-t border-white/5 p-3 safe-bottom">
         <div className="max-w-md mx-auto flex bg-white/5 p-1 rounded-2xl border border-white/5">
-            <button 
-                onClick={() => { setActiveTab('drive'); setIsLearningMode(false); }} 
+            <button
+                onClick={() => { setActiveTab('drive'); setIsLearningMode(false); }}
                 className={`flex-1 py-3 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'drive' ? 'bg-orange-500 text-black shadow-lg shadow-orange-500/20' : 'text-slate-500'}`}
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                 HUD
             </button>
-            <button 
-                onClick={() => { setActiveTab('memory'); setIsLearningMode(false); }} 
+            <button
+                onClick={() => { setActiveTab('memory'); setIsLearningMode(false); }}
                 className={`flex-1 py-3 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'memory' ? 'bg-orange-500 text-black shadow-lg shadow-orange-500/20' : 'text-slate-500'}`}
             >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
                 Archives
+            </button>
+            <button
+                onClick={() => { setActiveTab('upload'); setIsLearningMode(false); }}
+                className={`flex-1 py-3 rounded-xl text-[10px] font-black tracking-widest uppercase transition-all flex items-center justify-center gap-2 ${activeTab === 'upload' ? 'bg-orange-500 text-black shadow-lg shadow-orange-500/20' : 'text-slate-500'}`}
+            >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                Upload
             </button>
         </div>
       </footer>
