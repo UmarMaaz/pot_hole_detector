@@ -14,7 +14,7 @@ const isMobile = () => {
 export async function initLocalModel() {
   if (objectDetector && imageEmbedder) return { objectDetector, imageEmbedder };
 
-  const delegate = isMobile() ? "CPU" : "GPU";
+  const delegate: "CPU" | "GPU" = isMobile() ? "CPU" : "GPU";
   console.log(`Initializing models with ${delegate} delegate...`);
 
   try {
@@ -22,26 +22,26 @@ export async function initLocalModel() {
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
     );
 
-    const createDetector = async (useDelegate: string) => {
-      return ObjectDetector.createFromOptions(filesetResolver, {
-        baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
-          delegate: useDelegate
-        },
-        scoreThreshold: 0.15, 
-        runningMode: "VIDEO"
-      });
-    };
+  const createDetector = async (useDelegate: "CPU" | "GPU") => {
+    return ObjectDetector.createFromOptions(filesetResolver, {
+      baseOptions: {
+        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
+        delegate: useDelegate
+      },
+      scoreThreshold: 0.15, 
+      runningMode: "VIDEO"
+    });
+  };
 
-    const createEmbedder = async (useDelegate: string) => {
-      return ImageEmbedder.createFromOptions(filesetResolver, {
-        baseOptions: {
-          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite`,
-          delegate: useDelegate
-        },
-        runningMode: "IMAGE"
-      });
-    };
+  const createEmbedder = async (useDelegate: "CPU" | "GPU") => {
+    return ImageEmbedder.createFromOptions(filesetResolver, {
+      baseOptions: {
+        modelAssetPath: `https://storage.googleapis.com/mediapipe-models/image_embedder/mobilenet_v3_small/float32/1/mobilenet_v3_small.tflite`,
+        delegate: useDelegate
+      },
+      runningMode: "IMAGE"
+    });
+  };
 
     try {
       objectDetector = await createDetector(delegate);
