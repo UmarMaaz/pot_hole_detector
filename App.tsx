@@ -116,48 +116,110 @@ const App: React.FC = () => {
     requestRef.current = requestAnimationFrame(animate);
   };
 
-  const handleAreaSelected = async (rect: { x: number, y: number, w: number, h: number }) => {
-    const video = document.querySelector('video') as HTMLVideoElement;
+  const handleAreaSelected = async (rect: { x: number, y: number, w: number, h: number }, uploadedImage?: string | null) => {
     const { imageEmbedder } = modelsRef.current || {};
-    if (!video || !imageEmbedder) return;
+    if (!imageEmbedder) return;
 
     setIsSyncing(true);
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = 120;
-    thumbCanvas.height = 120;
-    const tCtx = thumbCanvas.getContext('2d');
-    tCtx?.drawImage(video, rect.x * video.videoWidth, rect.y * video.videoHeight, rect.w * video.videoWidth, rect.h * video.videoHeight, 0, 0, 120, 120);
-    const thumb = thumbCanvas.toDataURL('image/jpeg');
-
-    const trainCropCanvas = document.createElement('canvas');
-    trainCropCanvas.width = 224;
-    trainCropCanvas.height = 224;
-    const cCtx = trainCropCanvas.getContext('2d');
-    cCtx?.drawImage(video, rect.x * video.videoWidth, rect.y * video.videoHeight, rect.w * video.videoWidth, rect.h * video.videoHeight, 0, 0, 224, 224);
-    
-    const embeddingResult = imageEmbedder.embed(trainCropCanvas);
-    if (!embeddingResult.embeddings || !embeddingResult.embeddings[0]) {
-        setIsSyncing(false);
-        return;
-    }
-    const vector = Array.from(embeddingResult.embeddings[0].floatEmbedding as Float32Array);
-    const newSample: LearnedSample = { id: `learned-${Date.now()}`, embedding: vector, thumbnail: thumb, timestamp: Date.now() };
 
     try {
-        if (isSupabaseConfigured) await potholeService.insert(newSample);
-        setLearnedSamples(prev => [newSample, ...prev]);
-        setIsLearningMode(false);
-        const audio = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const osc = audio.createOscillator();
-        const gain = audio.createGain();
-        osc.connect(gain); gain.connect(audio.destination);
-        osc.frequency.setValueAtTime(1000, audio.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audio.currentTime + 0.2);
-        osc.start(); osc.stop(audio.currentTime + 0.2);
+      let thumb: string;
+      let vector: number[];
+
+      if (uploadedImage) {
+        // Handle uploaded image case
+        const img = new Image();
+        img.src = uploadedImage;
+
+        // Wait for image to load
+        await new Promise((resolve) => {
+          img.onload = resolve;
+        });
+
+        // Create thumbnail
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = 120;
+        thumbCanvas.height = 120;
+        const tCtx = thumbCanvas.getContext('2d');
+
+        // Calculate the actual position and size based on the image dimensions
+        const cropX = rect.x * img.width;
+        const cropY = rect.y * img.height;
+        const cropWidth = rect.w * img.width;
+        const cropHeight = rect.h * img.height;
+
+        tCtx?.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, 120, 120);
+        thumb = thumbCanvas.toDataURL('image/jpeg');
+
+        // Create training crop
+        const trainCropCanvas = document.createElement('canvas');
+        trainCropCanvas.width = 224;
+        trainCropCanvas.height = 224;
+        const cCtx = trainCropCanvas.getContext('2d');
+        cCtx?.drawImage(img, cropX, cropY, cropWidth, cropHeight, 0, 0, 224, 224);
+
+        // Generate embedding from the cropped image
+        const embeddingResult = imageEmbedder.embed(trainCropCanvas);
+        if (!embeddingResult.embeddings || !embeddingResult.embeddings[0]) {
+          throw new Error("Could not generate embedding");
+        }
+        vector = Array.from(embeddingResult.embeddings[0].floatEmbedding as Float32Array);
+      } else {
+        // Handle live video case
+        const video = document.querySelector('video') as HTMLVideoElement;
+        if (!video) return;
+
+        // Create thumbnail
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = 120;
+        thumbCanvas.height = 120;
+        const tCtx = thumbCanvas.getContext('2d');
+        tCtx?.drawImage(video, rect.x * video.videoWidth, rect.y * video.videoHeight, rect.w * video.videoWidth, rect.h * video.videoHeight, 0, 0, 120, 120);
+        thumb = thumbCanvas.toDataURL('image/jpeg');
+
+        // Create training crop
+        const trainCropCanvas = document.createElement('canvas');
+        trainCropCanvas.width = 224;
+        trainCropCanvas.height = 224;
+        const cCtx = trainCropCanvas.getContext('2d');
+        cCtx?.drawImage(video, rect.x * video.videoWidth, rect.y * video.videoHeight, rect.w * video.videoWidth, rect.h * video.videoHeight, 0, 0, 224, 224);
+
+        // Generate embedding
+        const embeddingResult = imageEmbedder.embed(trainCropCanvas);
+        if (!embeddingResult.embeddings || !embeddingResult.embeddings[0]) {
+          throw new Error("Could not generate embedding");
+        }
+        vector = Array.from(embeddingResult.embeddings[0].floatEmbedding as Float32Array);
+      }
+
+      // Create the new sample
+      const newSample: LearnedSample = {
+        id: `learned-${Date.now()}`,
+        embedding: vector,
+        thumbnail: thumb,
+        timestamp: Date.now()
+      };
+
+      // Save to Supabase or local storage
+      if (isSupabaseConfigured) await potholeService.insert(newSample);
+      setLearnedSamples(prev => [newSample, ...prev]);
+
+      // Exit learning mode after successful training
+      setIsLearningMode(false);
+
+      // Play success sound
+      const audio = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.connect(gain); gain.connect(audio.destination);
+      osc.frequency.setValueAtTime(1000, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audio.currentTime + 0.2);
+      osc.start(); osc.stop(audio.currentTime + 0.2);
     } catch (err) {
-        console.error("Failed to sync new hazard:", err);
+      console.error("Failed to sync new hazard:", err);
+      alert("Failed to train with the selected area. Please try again.");
     } finally {
-        setIsSyncing(false);
+      setIsSyncing(false);
     }
   };
 

@@ -6,7 +6,7 @@ interface CameraFeedProps {
   detections: Detection[];
   isActive: boolean;
   isLearningMode: boolean;
-  onAreaSelected: (rect: { x: number, y: number, w: number, h: number }) => void;
+  onAreaSelected: (rect: { x: number, y: number, w: number, h: number }, uploadedImage?: string | null) => void;
 }
 
 const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearningMode, onAreaSelected }) => {
@@ -133,7 +133,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
     const h = y2 - y1;
 
     if (w > 0.01 && h > 0.01) {
-      onAreaSelected({ x: x1, y: y1, w, h });
+      onAreaSelected({ x: x1, y: y1, w, h }, uploadedImage);
     }
   };
 
