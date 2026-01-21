@@ -20,6 +20,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
   const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
+  const [selectionRect, setSelectionRect] = useState<{x: number, y: number, w: number, h: number} | null>(null);
 
   useEffect(() => {
     async function startCamera() {
@@ -51,7 +52,6 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
           img.onload = () => {
             setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
             setUploadedImage(event.target!.result as string);
-            // Stop the camera stream if it's active
             if (stream) {
               stream.getTracks().forEach(track => track.stop());
               setStream(null);
@@ -64,12 +64,26 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
     }
   };
 
-  // Support both Mouse and Touch
   const getCoords = (e: React.MouseEvent | React.TouchEvent) => {
     if (!containerRef.current) return { x: 0, y: 0 };
     const rect = containerRef.current.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    let clientX: number, clientY: number;
+    
+    if ('touches' in e) {
+      if (e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if ('changedTouches' in e && (e as React.TouchEvent).changedTouches.length > 0) {
+        clientX = (e as React.TouchEvent).changedTouches[0].clientX;
+        clientY = (e as React.TouchEvent).changedTouches[0].clientY;
+      } else {
+        return { x: 0, y: 0 };
+      }
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    
     return {
       x: clientX - rect.left,
       y: clientY - rect.top
@@ -78,62 +92,50 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
 
   const handleStart = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isLearningMode) return;
+    e.preventDefault();
     const pos = getCoords(e);
     setStartPos(pos);
     setCurrentPos(pos);
     setIsDragging(true);
+    setSelectionRect(null);
   };
 
   const handleMove = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDragging) return;
-    setCurrentPos(getCoords(e));
+    e.preventDefault();
+    const pos = getCoords(e);
+    setCurrentPos(pos);
+    
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = Math.min(startPos.x, pos.x);
+      const y = Math.min(startPos.y, pos.y);
+      const w = Math.abs(pos.x - startPos.x);
+      const h = Math.abs(pos.y - startPos.y);
+      setSelectionRect({ x, y, w, h });
+    }
   };
 
-  const handleEnd = () => {
+  const handleEnd = (e: React.MouseEvent | React.TouchEvent) => {
     if (!isDragging || !containerRef.current) return;
+    e.preventDefault();
     setIsDragging(false);
+    setSelectionRect(null);
 
     const containerRect = containerRef.current.getBoundingClientRect();
+    
+    const x1 = Math.min(startPos.x, currentPos.x) / containerRect.width;
+    const y1 = Math.min(startPos.y, currentPos.y) / containerRect.height;
+    const x2 = Math.max(startPos.x, currentPos.x) / containerRect.width;
+    const y2 = Math.max(startPos.y, currentPos.y) / containerRect.height;
 
-    // Calculate the actual displayed image dimensions considering aspect ratio
-    const imgAspectRatio = uploadedImage ?
-      imageDimensions.width / imageDimensions.height
-      : 16/9; // Default aspect ratio for camera
+    const normalizedX = Math.max(0, Math.min(1, x1));
+    const normalizedY = Math.max(0, Math.min(1, y1));
+    const normalizedW = Math.max(0, Math.min(1 - normalizedX, x2 - x1));
+    const normalizedH = Math.max(0, Math.min(1 - normalizedY, y2 - y1));
 
-    const containerAspectRatio = containerRect.width / containerRect.height;
-
-    let displayWidth, displayHeight, offsetX, offsetY;
-
-    if (containerAspectRatio > imgAspectRatio) {
-      // Container is wider than the image - letterboxing on sides
-      displayHeight = containerRect.height;
-      displayWidth = containerRect.height * imgAspectRatio;
-      offsetX = (containerRect.width - displayWidth) / 2;
-      offsetY = 0;
-    } else {
-      // Container is taller than the image - letterboxing on top/bottom
-      displayWidth = containerRect.width;
-      displayHeight = containerRect.width / imgAspectRatio;
-      offsetX = 0;
-      offsetY = (containerRect.height - displayHeight) / 2;
-    }
-
-    // Adjust coordinates to account for offset and normalize to image dimensions
-    const adjustedStartX = Math.max(0, Math.min(1, (startPos.x - offsetX) / displayWidth));
-    const adjustedStartY = Math.max(0, Math.min(1, (startPos.y - offsetY) / displayHeight));
-    const adjustedCurrentX = Math.max(0, Math.min(1, (currentPos.x - offsetX) / displayWidth));
-    const adjustedCurrentY = Math.max(0, Math.min(1, (currentPos.y - offsetY) / displayHeight));
-
-    const x1 = Math.min(adjustedStartX, adjustedCurrentX);
-    const y1 = Math.min(adjustedStartY, adjustedCurrentY);
-    const x2 = Math.max(adjustedStartX, adjustedCurrentX);
-    const y2 = Math.max(adjustedStartY, adjustedCurrentY);
-
-    const w = x2 - x1;
-    const h = y2 - y1;
-
-    if (w > 0.01 && h > 0.01) {
-      onAreaSelected({ x: x1, y: y1, w, h }, uploadedImage);
+    if (normalizedW > 0.01 && normalizedH > 0.01) {
+      onAreaSelected({ x: normalizedX, y: normalizedY, w: normalizedW, h: normalizedH }, uploadedImage);
     }
   };
 
@@ -146,13 +148,10 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw detections
       detections.forEach(det => {
         if (!det.bbox) return;
         const [y_min, x_min, y_max, x_max] = det.bbox;
 
-        // For both camera and uploaded images, use the full canvas dimensions
-        // The image is displayed with object-fit: cover, so it fills the container proportionally
         const x = x_min * canvas.width;
         const y = y_min * canvas.height;
         const w = (x_max - x_min) * canvas.width;
@@ -166,7 +165,6 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
         ctx.lineWidth = det.type === HazardType.LEARNED ? 4 : 2;
         ctx.strokeRect(x, y, w, h);
 
-        // Responsive Labeling
         const fontSize = canvas.width < 800 ? 18 : 12;
         ctx.font = `black ${fontSize}px ui-monospace, monospace`;
         const mainLabel = det.label || det.type;
@@ -182,40 +180,19 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
         ctx.fillText(fullText, x + padding, y - padding/2 - 2);
       });
 
-      if (isDragging) {
-        const rect = containerRef.current?.getBoundingClientRect();
-        if (rect) {
-          // Calculate scaling factors to map from screen coordinates to canvas coordinates
-          // Since both the container and canvas have the same aspect ratio, we can use a simple scale
-          const scaleX = canvas.width / rect.width;
-          const scaleY = canvas.height / rect.height;
-
-          const x = Math.min(startPos.x, currentPos.x) * scaleX;
-          const y = Math.min(startPos.y, currentPos.y) * scaleY;
-          const w = Math.abs(currentPos.x - startPos.x) * scaleX;
-          const h = Math.abs(currentPos.y - startPos.y) * scaleY;
-
-          ctx.strokeStyle = '#f97316';
-          ctx.setLineDash([10, 10]);
-          ctx.lineWidth = 4;
-          ctx.strokeRect(x, y, w, h);
-          ctx.fillStyle = 'rgba(249, 115, 22, 0.2)';
-          ctx.fillRect(x, y, w, h);
-          ctx.setLineDash([]);
-        }
-      }
       requestAnimationFrame(render);
     };
     render();
-  }, [detections, isDragging, startPos, currentPos]);
+  }, [detections]);
 
   return (
     <div
       ref={containerRef}
-      className={`relative w-full h-full bg-black flex items-center justify-center overflow-hidden transition-all ${isLearningMode ? 'custom-cursor' : ''}`}
+      className={`relative w-full h-full bg-black flex items-center justify-center overflow-hidden transition-all touch-none ${isLearningMode ? 'custom-cursor' : ''}`}
       onMouseDown={handleStart}
       onMouseMove={handleMove}
       onMouseUp={handleEnd}
+      onMouseLeave={handleEnd}
       onTouchStart={handleStart}
       onTouchMove={handleMove}
       onTouchEnd={handleEnd}
@@ -227,24 +204,39 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
           src={uploadedImage}
           alt="Uploaded for training"
           className="absolute w-full h-full object-cover grayscale-[0.1] brightness-[0.7]"
+          draggable={false}
         />
       )}
 
-      {/* HUD Vignette for Contrast */}
       <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_20%,rgba(0,0,0,0.6)_100%)]"></div>
 
       <canvas ref={canvasRef} width={1280} height={720} className="absolute w-full h-full object-cover pointer-events-none z-10" />
 
+      {selectionRect && isLearningMode && (
+        <div
+          className="absolute border-4 border-orange-500 bg-orange-500/20 pointer-events-none z-30"
+          style={{
+            left: `${selectionRect.x}px`,
+            top: `${selectionRect.y}px`,
+            width: `${selectionRect.w}px`,
+            height: `${selectionRect.h}px`,
+            borderStyle: 'dashed'
+          }}
+        />
+      )}
+
       {isLearningMode && (
         <>
-          <div className="absolute inset-0 bg-orange-500/10 pointer-events-none border-[20px] border-orange-500/10 flex items-center justify-center z-20">
-            <div className="bg-orange-500/90 backdrop-blur-xl text-black px-8 py-3 font-black text-[10px] tracking-[0.2em] rounded-full shadow-2xl flex items-center gap-4 animate-bounce uppercase">
-              Select Visual Signature
-            </div>
+          <div className="absolute inset-0 bg-orange-500/10 pointer-events-none border-4 sm:border-[10px] md:border-[20px] border-orange-500/10 flex items-center justify-center z-20">
+            {!isDragging && (
+              <div className="bg-orange-500/90 backdrop-blur-xl text-black px-4 sm:px-8 py-2 sm:py-3 font-black text-[8px] sm:text-[10px] tracking-[0.1em] sm:tracking-[0.2em] rounded-full shadow-2xl flex items-center gap-2 sm:gap-4 animate-bounce uppercase">
+                Draw box around pothole
+              </div>
+            )}
           </div>
 
-          <div className="absolute top-4 left-4 z-[100]">
-            <label className="px-4 py-2 bg-orange-500 text-black rounded-lg font-bold text-sm cursor-pointer shadow-lg">
+          <div className="absolute top-20 sm:top-4 left-2 sm:left-4 z-[100]">
+            <label className="px-3 sm:px-4 py-2 bg-orange-500 text-black rounded-lg font-bold text-xs sm:text-sm cursor-pointer shadow-lg">
               Upload Image
               <input
                 type="file"
@@ -256,12 +248,12 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
           </div>
 
           {uploadedImage && (
-            <div className="absolute top-4 right-4 z-[100]">
+            <div className="absolute top-20 sm:top-4 right-2 sm:right-4 z-[100]">
               <button
                 onClick={() => {
                   setUploadedImage(null);
+                  setImageDimensions({ width: 0, height: 0 });
                   if (!stream) {
-                    // Restart camera if it was stopped
                     const startCamera = async () => {
                       try {
                         const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -277,7 +269,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
                     startCamera();
                   }
                 }}
-                className="px-4 py-2 bg-gray-700 text-white rounded-lg font-bold text-sm shadow-lg"
+                className="px-3 sm:px-4 py-2 bg-gray-700 text-white rounded-lg font-bold text-xs sm:text-sm shadow-lg"
               >
                 Use Camera
               </button>
