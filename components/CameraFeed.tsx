@@ -196,8 +196,8 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
             </div>
           </div>
 
-          <div className="absolute top-4 left-4 z-30">
-            <label className="px-4 py-2 bg-orange-500 text-black rounded-lg font-bold text-sm cursor-pointer">
+          <div className="absolute top-4 left-4 z-[100]">
+            <label className="px-4 py-2 bg-orange-500 text-black rounded-lg font-bold text-sm cursor-pointer shadow-lg">
               Upload Image
               <input
                 type="file"
@@ -209,7 +209,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
           </div>
 
           {uploadedImage && (
-            <div className="absolute top-4 right-4 z-30">
+            <div className="absolute top-4 right-4 z-[100]">
               <button
                 onClick={() => {
                   setUploadedImage(null);
@@ -230,7 +230,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
                     startCamera();
                   }
                 }}
-                className="px-4 py-2 bg-gray-700 text-white rounded-lg font-bold text-sm"
+                className="px-4 py-2 bg-gray-700 text-white rounded-lg font-bold text-sm shadow-lg"
               >
                 Use Camera
               </button>
