@@ -19,6 +19,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
   const [startPos, setStartPos] = useState({ x: 0, y: 0 });
   const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
   const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     async function startCamera() {
@@ -46,12 +47,17 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
-          setUploadedImage(event.target.result as string);
-          // Stop the camera stream if it's active
-          if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-            setStream(null);
-          }
+          const img = new Image();
+          img.onload = () => {
+            setImageDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+            setUploadedImage(event.target!.result as string);
+            // Stop the camera stream if it's active
+            if (stream) {
+              stream.getTracks().forEach(track => track.stop());
+              setStream(null);
+            }
+          };
+          img.src = event.target.result as string;
         }
       };
       reader.readAsDataURL(file);
@@ -86,15 +92,48 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
   const handleEnd = () => {
     if (!isDragging || !containerRef.current) return;
     setIsDragging(false);
-    const rect = containerRef.current.getBoundingClientRect();
-    const x1 = Math.min(startPos.x, currentPos.x) / rect.width;
-    const y1 = Math.min(startPos.y, currentPos.y) / rect.height;
-    const x2 = Math.max(startPos.x, currentPos.x) / rect.width;
-    const y2 = Math.max(startPos.y, currentPos.y) / rect.height;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+
+    // Calculate the actual displayed image dimensions considering aspect ratio
+    const imgAspectRatio = uploadedImage ?
+      imageDimensions.width / imageDimensions.height
+      : 16/9; // Default aspect ratio for camera
+
+    const containerAspectRatio = containerRect.width / containerRect.height;
+
+    let displayWidth, displayHeight, offsetX, offsetY;
+
+    if (containerAspectRatio > imgAspectRatio) {
+      // Container is wider than the image - letterboxing on sides
+      displayHeight = containerRect.height;
+      displayWidth = containerRect.height * imgAspectRatio;
+      offsetX = (containerRect.width - displayWidth) / 2;
+      offsetY = 0;
+    } else {
+      // Container is taller than the image - letterboxing on top/bottom
+      displayWidth = containerRect.width;
+      displayHeight = containerRect.width / imgAspectRatio;
+      offsetX = 0;
+      offsetY = (containerRect.height - displayHeight) / 2;
+    }
+
+    // Adjust coordinates to account for offset and normalize to image dimensions
+    const adjustedStartX = Math.max(0, Math.min(1, (startPos.x - offsetX) / displayWidth));
+    const adjustedStartY = Math.max(0, Math.min(1, (startPos.y - offsetY) / displayHeight));
+    const adjustedCurrentX = Math.max(0, Math.min(1, (currentPos.x - offsetX) / displayWidth));
+    const adjustedCurrentY = Math.max(0, Math.min(1, (currentPos.y - offsetY) / displayHeight));
+
+    const x1 = Math.min(adjustedStartX, adjustedCurrentX);
+    const y1 = Math.min(adjustedStartY, adjustedCurrentY);
+    const x2 = Math.max(adjustedStartX, adjustedCurrentX);
+    const y2 = Math.max(adjustedStartY, adjustedCurrentY);
+
     const w = x2 - x1;
     const h = y2 - y1;
+
     if (w > 0.01 && h > 0.01) {
-        onAreaSelected({ x: x1, y: y1, w, h });
+      onAreaSelected({ x: x1, y: y1, w, h });
     }
   };
 
@@ -106,16 +145,20 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
 
     const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
+
+      // Draw detections
       detections.forEach(det => {
         if (!det.bbox) return;
         const [y_min, x_min, y_max, x_max] = det.bbox;
+
+        // For both camera and uploaded images, use the full canvas dimensions
+        // The image is displayed with object-fit: cover, so it fills the container proportionally
         const x = x_min * canvas.width;
         const y = y_min * canvas.height;
         const w = (x_max - x_min) * canvas.width;
         const h = (y_max - y_min) * canvas.height;
 
-        let color = '#38bdf8'; 
+        let color = '#38bdf8';
         if (det.type === HazardType.LEARNED) color = '#f97316';
         if (det.type === HazardType.COLLISION_RISK) color = '#ef4444';
 
@@ -129,12 +172,12 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
         const mainLabel = det.label || det.type;
         const scoreLabel = det.matchScore ? ` ${Math.round(det.matchScore * 100)}%` : '';
         const fullText = `${mainLabel}${scoreLabel}`.toUpperCase();
-        
+
         const tw = ctx.measureText(fullText).width;
         const padding = fontSize * 0.6;
         ctx.fillStyle = color;
         ctx.fillRect(x, y - (fontSize + padding), tw + padding * 2, fontSize + padding);
-        
+
         ctx.fillStyle = 'black';
         ctx.fillText(fullText, x + padding, y - padding/2 - 2);
       });
@@ -142,19 +185,23 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ detections, isActive, isLearnin
       if (isDragging) {
         const rect = containerRef.current?.getBoundingClientRect();
         if (rect) {
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const x = Math.min(startPos.x, currentPos.x) * scaleX;
-            const y = Math.min(startPos.y, currentPos.y) * scaleY;
-            const w = Math.abs(currentPos.x - startPos.x) * scaleX;
-            const h = Math.abs(currentPos.y - startPos.y) * scaleY;
-            ctx.strokeStyle = '#f97316';
-            ctx.setLineDash([10, 10]);
-            ctx.lineWidth = 4;
-            ctx.strokeRect(x, y, w, h);
-            ctx.fillStyle = 'rgba(249, 115, 22, 0.2)';
-            ctx.fillRect(x, y, w, h);
-            ctx.setLineDash([]);
+          // Calculate scaling factors to map from screen coordinates to canvas coordinates
+          // Since both the container and canvas have the same aspect ratio, we can use a simple scale
+          const scaleX = canvas.width / rect.width;
+          const scaleY = canvas.height / rect.height;
+
+          const x = Math.min(startPos.x, currentPos.x) * scaleX;
+          const y = Math.min(startPos.y, currentPos.y) * scaleY;
+          const w = Math.abs(currentPos.x - startPos.x) * scaleX;
+          const h = Math.abs(currentPos.y - startPos.y) * scaleY;
+
+          ctx.strokeStyle = '#f97316';
+          ctx.setLineDash([10, 10]);
+          ctx.lineWidth = 4;
+          ctx.strokeRect(x, y, w, h);
+          ctx.fillStyle = 'rgba(249, 115, 22, 0.2)';
+          ctx.fillRect(x, y, w, h);
+          ctx.setLineDash([]);
         }
       }
       requestAnimationFrame(render);
