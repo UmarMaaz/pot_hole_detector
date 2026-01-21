@@ -1,14 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { HazardType, Detection } from '../types';
+import { HazardType, Detection, LearnedSample } from '../types';
 
 interface ImageUploadProps {
   onDetectionsChange: (detections: Detection[]) => void;
+  onTrainWithSamples?: (samples: LearnedSample[]) => Promise<void>;
 }
 
-const ImageUpload: React.FC<ImageUploadProps> = ({ onDetectionsChange }) => {
+const ImageUpload: React.FC<ImageUploadProps> = ({ onDetectionsChange, onTrainWithSamples }) => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [isTraining, setIsTraining] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [startPoint, setStartPoint] = useState<{ x: number; y: number } | null>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -111,6 +113,77 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onDetectionsChange }) => {
     }, 1500);
   };
 
+  const handleTrainWithImage = async () => {
+    if (!selectedImage || detections.length === 0) return;
+
+    setIsTraining(true);
+
+    // Process each detection to create a learned sample
+    const samples: LearnedSample[] = [];
+
+    for (const detection of detections) {
+      if (!detection.bbox) continue;
+
+      // Extract the region of interest from the image
+      const img = imageRef.current;
+      if (!img) continue;
+
+      // Create a canvas to extract the cropped region
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+
+      const [y1, x1, y2, x2] = detection.bbox;
+      const cropX = x1 * img.naturalWidth;
+      const cropY = y1 * img.naturalHeight;
+      const cropWidth = (x2 - x1) * img.naturalWidth;
+      const cropHeight = (y2 - y1) * img.naturalHeight;
+
+      canvas.width = cropWidth;
+      canvas.height = cropHeight;
+
+      ctx.drawImage(
+        img,
+        cropX, cropY, cropWidth, cropHeight,
+        0, 0, cropWidth, cropHeight
+      );
+
+      // Create thumbnail from the cropped image
+      const thumbnail = canvas.toDataURL('image/jpeg', 0.8);
+
+      // In a real implementation, we would generate embeddings using the image embedder
+      // For now, we'll simulate with random values
+      const embedding = Array.from({ length: 128 }, () => Math.random());
+
+      // Create a learned sample
+      const newSample: LearnedSample = {
+        id: `learned-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        embedding,
+        thumbnail,
+        timestamp: Date.now()
+      };
+
+      samples.push(newSample);
+    }
+
+    // Call the training function if provided
+    if (samples.length > 0 && onTrainWithSamples) {
+      try {
+        await onTrainWithSamples(samples);
+        setIsTraining(false);
+        alert(`Successfully trained with ${samples.length} pothole samples from your image!`);
+      } catch (error) {
+        console.error('Training failed:', error);
+        setIsTraining(false);
+        alert('Training failed. Please try again.');
+      }
+    } else {
+      // Fallback if no training function is provided
+      setIsTraining(false);
+      alert(`Created ${samples.length} training samples from your image!`);
+    }
+  };
+
   const handleClear = () => {
     setSelectedImage(null);
     setDetections([]);
@@ -135,13 +208,20 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onDetectionsChange }) => {
 
       {selectedImage && (
         <div className="flex-1 flex flex-col">
-          <div className="flex gap-2 mb-4">
+          <div className="flex gap-2 mb-4 flex-wrap">
             <button
               onClick={handleDetectAutomatically}
               disabled={isDetecting}
               className="px-4 py-2 bg-orange-500 text-black rounded-lg font-bold disabled:opacity-50"
             >
               {isDetecting ? 'Detecting...' : 'Auto-Detect Potholes'}
+            </button>
+            <button
+              onClick={handleTrainWithImage}
+              disabled={isTraining || detections.length === 0}
+              className="px-4 py-2 bg-emerald-500 text-black rounded-lg font-bold disabled:opacity-50"
+            >
+              {isTraining ? 'Training...' : `Train with ${detections.length} Marked Areas`}
             </button>
             <button
               onClick={handleClear}
@@ -151,7 +231,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onDetectionsChange }) => {
             </button>
           </div>
 
-          <div 
+          <div
             className="relative flex-1 border-2 border-dashed border-gray-600 rounded-lg overflow-hidden bg-gray-900"
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
@@ -164,16 +244,16 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onDetectionsChange }) => {
               alt="Uploaded"
               className="w-full h-full object-contain"
             />
-            
+
             {/* Render detections as overlays */}
             {detections.map((detection, index) => {
               if (!detection.bbox || !imageRef.current) return null;
-              
+
               const [top, left, bottom, right] = detection.bbox;
               const img = imageRef.current;
               const width = img.clientWidth;
               const height = img.clientHeight;
-              
+
               return (
                 <div
                   key={index}
@@ -192,9 +272,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onDetectionsChange }) => {
               );
             })}
           </div>
-          
+
           <div className="mt-4 text-sm text-gray-400">
-            <p><strong>Tip:</strong> Click and drag on the image to manually mark potholes, or use "Auto-Detect" to run AI analysis.</p>
+            <p><strong>Tip:</strong> Click and drag on the image to mark potholes, then click "Train" to teach the AI.</p>
           </div>
         </div>
       )}

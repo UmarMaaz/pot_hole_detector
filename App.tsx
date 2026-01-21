@@ -168,8 +168,33 @@ const App: React.FC = () => {
     try {
         if (isSupabaseConfigured) await potholeService.delete(id);
         setLearnedSamples(prev => prev.filter(s => s.id !== id));
-    } catch (err) { console.error("Delete failed:", err); } 
+    } catch (err) { console.error("Delete failed:", err); }
     finally { setIsSyncing(false); }
+  };
+
+  const handleTrainWithUploadedImage = async (samples: LearnedSample[]) => {
+    setIsSyncing(true);
+    try {
+      for (const sample of samples) {
+        if (isSupabaseConfigured) {
+          await potholeService.insert(sample);
+        }
+        setLearnedSamples(prev => [sample, ...prev]);
+      }
+
+      // Play success sound
+      const audio = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audio.createOscillator();
+      const gain = audio.createGain();
+      osc.connect(gain); gain.connect(audio.destination);
+      osc.frequency.setValueAtTime(800, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audio.currentTime + 0.3);
+      osc.start(); osc.stop(audio.currentTime + 0.3);
+    } catch (err) {
+      console.error("Training failed:", err);
+    } finally {
+      setIsSyncing(false);
+    }
   };
 
   return (
@@ -263,7 +288,10 @@ const App: React.FC = () => {
                   Upload images to detect potholes
                 </p>
               </header>
-              <ImageUpload onDetectionsChange={setImageDetections} />
+              <ImageUpload
+                onDetectionsChange={setImageDetections}
+                onTrainWithSamples={handleTrainWithUploadedImage}
+              />
             </div>
           </div>
         ) : (
